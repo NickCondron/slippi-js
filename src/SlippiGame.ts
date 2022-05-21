@@ -1,13 +1,5 @@
-import type { StatOptions, StatsType } from "./stats";
-import {
-  ActionsComputer,
-  ComboComputer,
-  ConversionComputer,
-  generateOverallStats,
-  InputComputer,
-  Stats,
-  StockComputer,
-} from "./stats";
+import type { StatOptions } from "./stats";
+import { InputComputer, PlayerInput, Stats } from "./stats";
 // Type imports
 import type { FrameEntryType, FramesType, GameEndType, GameStartType, MetadataType, RollbackFrames } from "./types";
 import { SlpParser, SlpParserEvent } from "./utils/slpParser";
@@ -20,13 +12,8 @@ import { closeSlpFile, getMetadata, iterateEvents, openSlpFile, SlpInputSource }
 export class SlippiGame {
   private input: SlpReadInput;
   private metadata: MetadataType | null = null;
-  private finalStats: StatsType | null = null;
   private parser: SlpParser;
   private readPosition: number | null = null;
-  private actionsComputer: ActionsComputer = new ActionsComputer();
-  private conversionComputer: ConversionComputer = new ConversionComputer();
-  private comboComputer: ComboComputer = new ComboComputer();
-  private stockComputer: StockComputer = new StockComputer();
   private inputComputer: InputComputer = new InputComputer();
   protected statsComputer: Stats;
 
@@ -52,13 +39,7 @@ export class SlippiGame {
 
     // Set up stats calculation
     this.statsComputer = new Stats(opts);
-    this.statsComputer.register(
-      this.actionsComputer,
-      this.comboComputer,
-      this.conversionComputer,
-      this.inputComputer,
-      this.stockComputer,
-    );
+    this.statsComputer.register(this.inputComputer);
     this.parser = new SlpParser();
     this.parser.on(SlpParserEvent.SETTINGS, (settings) => {
       this.statsComputer.setup(settings);
@@ -121,11 +102,7 @@ export class SlippiGame {
     return this.parser.getRollbackFrames();
   }
 
-  public getStats(): StatsType | null {
-    if (this.finalStats) {
-      return this.finalStats;
-    }
-
+  public getStats(): PlayerInput[] | null {
     this._process();
 
     const settings = this.parser.getSettings();
@@ -135,32 +112,7 @@ export class SlippiGame {
 
     // Finish processing if we're not up to date
     this.statsComputer.process();
-    const inputs = this.inputComputer.fetch();
-    const stocks = this.stockComputer.fetch();
-    const conversions = this.conversionComputer.fetch();
-    const playableFrameCount = this.parser.getPlayableFrameCount();
-    const overall = generateOverallStats({ settings, inputs, conversions, playableFrameCount });
-
-    const stats = {
-      lastFrame: this.parser.getLatestFrameNumber(),
-      playableFrameCount,
-      stocks: stocks,
-      conversions: conversions,
-      combos: this.comboComputer.fetch(),
-      actionCounts: this.actionsComputer.fetch(),
-      overall: overall,
-      gameComplete: this.parser.getGameEnd() !== null,
-    };
-
-    if (this.parser.getGameEnd() !== null) {
-      // If the game is complete, store a cached version of stats because it should not
-      // change anymore. Ideally the statsCompuer.process and fetch functions would simply do no
-      // work in this case instead but currently the conversions fetch function,
-      // generateOverallStats, and maybe more are doing work on every call.
-      this.finalStats = stats;
-    }
-
-    return stats;
+    return this.inputComputer.fetch();
   }
 
   public getMetadata(): MetadataType | null {
